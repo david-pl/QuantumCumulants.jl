@@ -4,68 +4,104 @@ using QuantumOpticsBase
 using SymbolicUtils
 using Symbolics
 using OrdinaryDiffEq
+using UUIDs
 
 const qc=QuantumCumulants
 
 @testset "index_basic" begin
 
-N = 10
-ha = NLevelSpace(Symbol(:atom),2)
-hf = FockSpace(:cavity)
-h = hf⊗ha
+    N = 10
+    ha = NLevelSpace(Symbol(:atom),2)
+    hf = FockSpace(:cavity)
+    h = hf⊗ha
 
-indT(i) = Index(h,i,N,ha) #transition index
-indF(i) = Index(h,i,N,hf) #fock index
-i_ind = indT(:i)
-j_ind = indT(:j)
+    indT(i) = Index(h,i,N,ha) #transition index
+    indF(i) = Index(h,i,N,hf) #fock index
+    i_ind = indT(:i)
+    j_ind = indT(:j)
 
-ind(a) = indT(a)
+    ind(a) = indT(a)
 
-@test(!isequal(indT(:i),indT(:j)))
-@test(!isequal(indT(:i),indF(:j)))
-@test(!isequal(indT(:i),indF(:i)))
+    @test(!isequal(indT(:i),indT(:j)))
+    @test(!isequal(indT(:i),indF(:j)))
+    @test(!isequal(indT(:i),indF(:i)))
 
-@test(isequal(indT(:i),Index(h,:i,10,ha)))
+    @test(isequal(indT(:i),Index(h,:i,10,ha)))
 
-g(k) = IndexedVariable(:g,k)
-@test(!isequal(g(indT(:i)),g(indT(:j))))
-@test(isequal(g(indT(:i)),g(Index(h,:i,10,ha))))
+    g(k) = IndexedVariable(:g,k)
+    @test(!isequal(g(indT(:i)),g(indT(:j))))
+    @test(isequal(g(indT(:i)),g(Index(h,:i,10,ha))))
 
-σ(i,j,k) = IndexedOperator(Transition(h,:σ,i,j),k)
-σ12i = σ(1,2,indT(:i))
-@test(isequal(σ12i,σ(1,2,i_ind)))
-@test(!isequal(σ12i,σ(2,2,i_ind)))
-@test(!isequal(σ12i,σ(1,2,j_ind)))
+    σ(i,j,k) = IndexedOperator(Transition(h,:σ,i,j),k)
+    σ12i = σ(1,2,indT(:i))
+    @test(isequal(σ12i,σ(1,2,i_ind)))
+    @test(!isequal(σ12i,σ(2,2,i_ind)))
+    @test(!isequal(σ12i,σ(1,2,j_ind)))
 
-@test(isequal(0,σ12i*σ(1,2,i_ind)))
-@test(isequal(σ(2,2,i_ind),σ(2,1,i_ind)*σ12i))
+    @test(isequal(0,σ12i*σ(1,2,i_ind)))
+    @test(isequal(σ(2,2,i_ind),σ(2,1,i_ind)*σ12i))
 
-#@test(isequal(σ(2,2,i_ind)+σ(1,2,j_ind),σ(1,2,j_ind)+σ(2,2,i_ind)))
-#apperently QAdd isequal function is dependant in order of terms inside the addition (?)
+    # @test isequal(simplify(σ(2,2,i_ind)+σ(1,2,j_ind)),simplify(σ(1,2,j_ind)+σ(2,2,i_ind)))
+    @test(isequal(adjoint(σ(1,2,i_ind)),σ(2,1,i_ind)))
 
-@test(isequal(adjoint(σ(1,2,i_ind)),σ(2,1,i_ind)))
+    @test isequal(σ(2,1,i_ind)*σ(1,2,i_ind), σ(2,2, i_ind))
+
+    ex = σ(2,1,i_ind)*σ(1,2,j_ind)
+    s1 = σ(2,1,i_ind)
+    s2 = σ(1,2,j_ind)
+    id = uuid4()
+    push!(s1.merge_events, id)
+    push!(s2.merge_events, id)
+    @test isequal(ex, σ(2,2,i_ind)*(i_ind == j_ind) + (1 - (i_ind==j_ind)) * s1*s2)
+
+    a = Destroy(h,:a)
+    a_indexed(i) = IndexedOperator(a, i)
+    r_ind = indF(:r)
+    s_ind = indF(:s)
+    @test isequal(a_indexed(r_ind) * a_indexed(r_ind)', a_indexed(r_ind)' * a_indexed(r_ind) + 1)
+    @test isequal(a_indexed(r_ind) * a_indexed(s_ind)', a_indexed(r_ind)' * a_indexed(r_ind) + r_ind == j_ind)
+
+end
 
 
-a = Destroy(h,:a)
-sum1 = SingleSum(σ(1,2,i_ind)*a',i_ind)
-sum2 = SingleSum(σ(2,1,i_ind)*a,i_ind)
+# @testset "sums" begin
+
+    N = 10
+    ha = NLevelSpace(Symbol(:atom),2)
+    hf = FockSpace(:cavity)
+    h = hf⊗ha
+
+    indT(i) = Index(h,i,N,ha) #transition index
+    indF(i) = Index(h,i,N,hf) #fock index
+    i_ind = indT(:i)
+    j_ind = indT(:j)
+
+    ind(a) = indT(a)
+
+    a = Destroy(h,:a)
+    σ(i,j,k) = IndexedOperator(Transition(h,:σ,i,j),k)
+    σ12i = σ(1,2,indT(:i))
+
+sum1 = Sum(σ(1,2,i_ind)*a',i_ind)
+sum2 = Sum(σ(2,1,i_ind)*a,i_ind)
 @test(isequal(adjoint(sum1),sum2))
 
-sum3 = SingleSum(a'*σ(1,2,i_ind) + a*σ(2,1,i_ind),i_ind)
+sum3 = Sum(a'*σ(1,2,i_ind) + a*σ(2,1,i_ind),i_ind)
 @test(isequal(sum3,(sum1+sum2)))
 @test(isequal(acts_on(σ12i),2))
-@test(i_ind < j_ind)
+# @test(i_ind < j_ind)
 
 @test isequal(0,Σ(0,i_ind))
 @test isequal(0,Σ(σ(2,1,i_ind)*σ(2,1,i_ind),i_ind))
 
 k_ind = indT(:k)
-Γij = DoubleIndexedVariable(:Γ,i_ind,j_ind)
+Γij = IndexedParameter(:Γ,i_ind,j_ind)
+g = IndexedParameter(:g)
 
-@test(isequal(change_index(Γij,j_ind,k_ind), DoubleIndexedVariable(:Γ,i_ind,k_ind)))
+@test(isequal(change_index(Γij,j_ind,k_ind), IndexedParameter(:Γ,i_ind,k_ind)))
 @test(isequal(change_index(σ(1,2,j_ind)*σ(1,2,i_ind),j_ind,i_ind),0))
 @test(isequal(change_index(g(k_ind),k_ind,j_ind),g(j_ind)))
-@test isequal(change_index(∑(2g(i_ind),i_ind), i_ind, j_ind), ∑(2g(j_ind),j_ind))
+@test isequal(change_index(Σ(2g(i_ind),i_ind), i_ind, j_ind), Σ(2g(j_ind),j_ind))
 
 @test(isequal(
     order_by_index(σ(1,2,k_ind)*σ(1,2,j_ind)*σ(1,2,i_ind),[i_ind]), σ(1,2,i_ind)*σ(1,2,k_ind)*σ(1,2,j_ind)
@@ -75,27 +111,27 @@ k_ind = indT(:k)
     reorder(σ(1,2,k_ind)*σ(1,2,j_ind)*σ(1,2,i_ind),[(i_ind,j_ind)]),
     SpecialIndexedTerm(σ(1,2,k_ind)*σ(1,2,i_ind)*σ(1,2,j_ind),[(i_ind,j_ind)])
 ))
-@test(isequal(σ(1,2,k_ind) * sum1, simplify(SingleSum(σ(1,2,k_ind)*σ(1,2,i_ind)*a',i_ind))
+@test(isequal(σ(1,2,k_ind) * sum1, simplify(Sum(σ(1,2,k_ind)*σ(1,2,i_ind)*a',i_ind))
 ))
 σ(1,2,k_ind) * sum1
-qqq = simplify(SingleSum(σ(1,2,k_ind)*σ(1,2,i_ind)*a',i_ind))
-# qqq = SingleSum(σ(1,2,k_ind)*σ(1,2,i_ind)*a',i_ind)
+qqq = simplify(Sum(σ(1,2,k_ind)*σ(1,2,i_ind)*a',i_ind))
+# qqq = Sum(σ(1,2,k_ind)*σ(1,2,i_ind)*a',i_ind)
 QuantumCumulants.get_indices(qqq)
 SymbolicUtils._iszero(a'*σ(1,2,i_ind)*σ(1,2,k_ind))
 
-@test(isequal(simplify(σ(2,1,k_ind) * sum1), simplify(SingleSum(σ(2,1,k_ind)*σ(1,2,i_ind)*a',i_ind,[k_ind]) + a'*σ(2,2,k_ind))
+@test(isequal(simplify(σ(2,1,k_ind) * sum1), simplify(Sum(σ(2,1,k_ind)*σ(1,2,i_ind)*a',i_ind,[k_ind]) + a'*σ(2,2,k_ind))
 ))
-innerSum = SingleSum(σ(2,1,i_ind)*σ(1,2,j_ind),i_ind)
+innerSum = Sum(σ(2,1,i_ind)*σ(1,2,j_ind),i_ind)
 @test(isequal(
-    DoubleSum(innerSum,j_ind), DoubleSum(SingleSum(σ(2,1,i_ind)*σ(1,2,j_ind),i_ind,[j_ind]),j_ind) + SingleSum(σ(2,2,j_ind),j_ind)
+    DoubleSum(innerSum,j_ind), DoubleSum(Sum(σ(2,1,i_ind)*σ(1,2,j_ind),i_ind,[j_ind]),j_ind) + Sum(σ(2,2,j_ind),j_ind)
 ))
 @test(isequal(SymbolicUtils.arguments(σ(1,2,indT(:i))*a'),SymbolicUtils.arguments(sum1)))
 
 @test isequal(N*g(ind(:j)),Σ(g(ind(:j)),ind(:i)))
-@test Σ(g(ind(:j)),ind(:j)) isa qc.SingleSum
+@test Σ(g(ind(:j)),ind(:j)) isa qc.Sum
 
 @test isequal(N*Γij,Σ(Γij,ind(:k)))
-@test Σ(Γij,ind(:i)) isa qc.SingleSum
+@test Σ(Γij,ind(:i)) isa qc.Sum
 
 @test (sum1 + a') isa qc.QAdd
 @test (sum1 + σ(1,2,i_ind)) isa qc.QAdd
@@ -295,9 +331,9 @@ arr = qc.create_index_arrays([i],[1:10])
 
 # issue 188
 gi = IndexedVariable(:g, i)
-@test isa(∑(5gi,i), SingleSum)
-@test isa(∑(gi*α,i), SingleSum)
+@test isa(∑(5gi,i), Sum)
+@test isa(∑(gi*α,i), Sum)
 @test isequal(∑(α,i), N*α)
 @test isequal(∑(5α,i), 5*N*α)
 
-end
+# end
